@@ -1,0 +1,54 @@
+# Free AI code reviewer: runs Google's Jules on every push / PR to your main branch.
+# Setup: see README.md (3 steps, ~5 minutes).
+
+name: Jules security review
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+
+# If you push 3 times in a minute, only the latest push gets reviewed.
+concurrency:
+  group: jules-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Only run for YOUR pushes/PRs, so strangers can't burn your daily Jules tasks.
+    if: github.actor == github.repository_owner
+    steps:
+      - name: Ask Jules to review the latest changes
+        uses: google-labs-code/jules-invoke@v1
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          starting_branch: ${{ github.head_ref || github.ref_name }}
+          include_last_commit: true
+          prompt: |
+            You are a careful senior engineer doing a security-focused code review
+            of the most recent commit in this repository.
+
+            Look for, in this order:
+            1. Hardcoded secrets: API keys, tokens, passwords, private keys, connection strings.
+            2. Injection: SQL/NoSQL injection, command injection, unsafe eval, path traversal.
+            3. Missing auth or access checks on routes and API endpoints.
+            4. XSS, CSRF, insecure CORS, and unvalidated user input.
+            5. Obvious logic bugs introduced by this commit.
+
+            Rules:
+            - Only fix issues you can confirm in the code. Do not guess.
+            - Move secrets to environment variables and add the variable names to
+              .env.example (never commit real values).
+            - Keep the change small (under 100 lines) and do not change public APIs.
+            - Run the existing tests before opening a PR. If tests fail, say so.
+            - If you find nothing that needs fixing, do NOT open a pull request.
+            - In the PR description, list every issue found with file and line,
+              why it matters, and what you changed. Flag anything you could not fix.
